@@ -1,0 +1,94 @@
+package edu.cmu.lti.yandongl.yahooanswers;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Vector;
+
+import edu.cmu.lti.oaqa.framework.data.RetrievalResult;
+
+public class YahooAnswers {
+
+	public List<RetrievalResult> retrieveYahooAnswers(String qid,
+			String question) {
+
+		List<RetrievalResult> results = new ArrayList<RetrievalResult>();
+
+		Vector<String> v_u = new Vector<String>();
+		Vector<String> v_q = new Vector<String>();
+		QueryYahooAnswers query = new QueryYahooAnswers(v_u, v_q);
+
+		int num_result = 5;
+		int each_num = 3;
+		int MAX_ERROR = 3;
+
+		int start = 0;
+		int num_errors = 0;
+
+		// System.out.println("target:"+q.getID()+"/"+q.getTarget());
+		boolean continuable = true;
+
+		while (start < num_result && continuable) {// when less than 100 q
+			Vector<edu.cmu.lti.yandongl.yahooanswers.YAQuestion> rc = null;
+
+			while (rc == null || rc.size() == 0 && num_errors < MAX_ERROR) {// if
+				// nothing
+				// crawled
+				// and
+				// <max_error
+				try {
+					rc = query.query(question, each_num, "question", start);
+				} catch (edu.cmu.lti.yandongl.yahooanswers.TimeOutException ex) {
+					System.err.println("TimeOut!");
+					ex.printStackTrace();
+					num_errors++;
+				} catch (IOException ex) {
+					ex.printStackTrace();
+				}
+				if (rc.size() == 0) {
+					System.err.println("try " + (++num_errors) + " time...");
+				}
+			}
+
+			if (rc.size() < each_num) {
+				continuable = false;
+			}
+
+			for (int j = 0; j < rc.size(); j++) {
+				edu.cmu.lti.yandongl.yahooanswers.YAQuestion yq = rc.get(j);
+				// System.out.print(qid);
+				// System.out.print("\t");
+				// System.out.print(question);
+				// System.out.print("\t");
+				// // System.out.print(q.getType());
+				// // System.out.print("\t");
+				// System.out.print(yq.getSubject());
+				// System.out.print("\t");
+				// System.out.print(yq.getContent());
+				// System.out.print("\t");
+				// System.out.print(yq.getUserID());
+				// System.out.print("\t");
+				// System.out.print(yq.getCategoryID());
+				// System.out.print("\t");
+				// System.out.print(yq.getCategory());
+				// System.out.print("\t");
+				// System.out.print(yq.getTimestamp());
+				// System.out.println();
+
+				Vector<edu.cmu.lti.yandongl.yahooanswers.YAAnswer> ans = yq
+						.getAllAnswers();
+				int count_ans = 0;
+				for (int k = 0; k < ans.size() && count_ans < 5; k++) {
+					RetrievalResult r = new RetrievalResult("doc_id", 1.01, ans
+							.get(k).getContent(), 1, question);
+					results.add(r);
+					count_ans++;
+				}
+			}
+			// type:factoid, list
+			start += each_num;// 0,50,100
+		}
+
+		return results;
+	}
+}

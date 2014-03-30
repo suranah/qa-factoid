@@ -1,0 +1,97 @@
+package edu.cmu.lti.oaqa.toy_impl;
+
+import info.ephyra.util.StringUtils;
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.apache.log4j.Logger;
+
+import edu.cmu.lti.oaqa.framework.base.AnswerGenerator_ImplBase;
+import edu.cmu.lti.oaqa.framework.data.AnswerCandidate;
+import edu.cmu.lti.oaqa.framework.data.RetrievalResult;
+import edu.cmu.lti.oaqa.util.LogUtil;
+
+public class WebReinforcementAnswerGenerator extends AnswerGenerator_ImplBase {
+
+  private static final Logger LOGGER = Logger.getLogger(LogUtil.getInvokingClassName());
+
+  @Override
+  public void initialize() {
+  }
+
+  /**
+   * Generates a final list of answers by web reinforcing.
+   * 
+   * @param answerType
+   *          answer type
+   * @param keyterms
+   *          list of key terms used to generate answer candidates
+   * @param answerCandidates
+   *          list of answer candidates
+   * @return list of final answers
+   */
+  public List<AnswerCandidate> generateFinalAnswers(String answerType, List<String> keyterms,
+          List<AnswerCandidate> answerCandidates) {
+
+    // sort answer candidates by sum of scores
+    // (use original order for tie-breaking)
+    Map<String, AnswerCandidate> results = new LinkedHashMap<String, AnswerCandidate>();
+    for (AnswerCandidate candidate : answerCandidates) {
+      String norm = StringUtils.normalize(candidate.toString());
+      AnswerCandidate result = results.get(norm);
+      if (result == null) {
+        results.put(norm, candidate);
+      } else {
+        // Add all documents from this instance of candidate to stored
+        // instance
+        List<RetrievalResult> cResults = candidate.getRetrievalResults();
+        for (RetrievalResult c : cResults) {
+          result.addRetrievalResult(c);
+        }
+        // Increase score
+        result.setScore(result.getScore() + candidate.getScore());
+      }
+    }
+    AnswerCandidate[] sorted = results.values().toArray(new AnswerCandidate[results.size()]);
+    
+    if (!answerType.equalsIgnoreCase("NEnone") && sorted.length != 0 && !answerType.equalsIgnoreCase("NEnumber")) {
+    sorted = WikiScoreGenerator.wikiScore(answerType, keyterms, sorted);
+    }
+    Arrays.sort(sorted, Collections.reverseOrder());
+    List<AnswerCandidate> finalAnswers = new ArrayList<AnswerCandidate>();
+    for (AnswerCandidate result : sorted) {
+      finalAnswers.add(result);
+    }
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < Math.min(5, finalAnswers.size()); i++) {
+      sb.append((i > 0 ? ", " : ""));
+      sb.append("\"" + finalAnswers.get(i) + "\"");
+    }
+    LOGGER.info("  Final top answers: " + (sb.length() > 0 ? sb : "No answers found."));
+    return finalAnswers;
+  }
+ 
+  @Override
+  public String getComponentId() {
+    return "Web Reinforcement Answer Generator";
+  }
+
+}

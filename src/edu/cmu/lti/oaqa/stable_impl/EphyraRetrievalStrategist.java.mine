@@ -1,0 +1,172 @@
+package edu.cmu.lti.oaqa.stable_impl;
+
+import info.ephyra.querygeneration.Query;
+import info.ephyra.search.Result;
+import info.ephyra.search.Search;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import org.apache.log4j.Logger;
+import org.apache.uima.analysis_engine.AnalysisEngineProcessException;
+import org.apache.uima.jcas.JCas;
+
+import edu.cmu.lti.oaqa.framework.IComponent;
+import edu.cmu.lti.oaqa.framework.JCasManipulator;
+import edu.cmu.lti.oaqa.framework.ViewManager;
+import edu.cmu.lti.oaqa.framework.data.RetrievalResult;
+import edu.cmu.lti.oaqa.util.LogUtil;
+import edu.cmu.lti.yandongl.yahooanswers.YahooAnswers;
+
+public class EphyraRetrievalStrategist implements IComponent {
+
+	private static final Logger LOGGER = Logger.getLogger(LogUtil
+			.getInvokingClassName());
+
+	private static List<IndriSentencesKM> kms;
+
+	private boolean serverMode;
+
+	private String[] locations;
+
+	private static YahooAnswers yahooAnswers = new YahooAnswers();
+
+	boolean YAHOO_ANSWER = true;
+
+	public EphyraRetrievalStrategist(boolean serverMode, String... locations) {
+		this.serverMode = serverMode;
+		this.locations = locations;
+	}
+
+	@Override
+	public void initialize() {
+		kms = new ArrayList<IndriSentencesKM>();
+		kms.add(new IndriSentencesKM(locations, serverMode));
+	}
+
+	@Override
+	/*
+	 * Retrieves text to be used for candidate extraction from sources.
+	 * 
+	 * @param jcas jcas
+	 */
+	public synchronized void process(JCas jcas)
+			throws AnalysisEngineProcessException {
+		try {
+			JCas questionView = ViewManager.getQuestionView(jcas);
+			List<String> keyterms = JCasManipulator.loadKeyterms(questionView);
+			List<String> keyphrases = JCasManipulator
+					.loadKeyphrases(questionView);
+			List<RetrievalResult> documents = retrieveDocuments(keyterms,
+					keyphrases);
+			EphyraReranking reranking = new EphyraReranking();
+			documents = reranking.rerank(keyterms, documents);
+
+			if (YAHOO_ANSWER) {
+//				StringBuilder b = new StringBuilder();
+//				for (String keyterm : keyterms) {
+//					if (b.length() > 0)
+//						b.append(" ");
+//					b.append(keyterm);
+//				}
+				String question = questionView.getDocumentText();
+//				question = b.toString();
+
+				System.out.println("---query:" + question);
+				// List<RetrievalResult> ya_documents = yanswers.retrieve(q);
+				List<RetrievalResult> tmp_docs = yahooAnswers
+				.retrieveYahooAnswers("qid", question);
+				documents.addAll(0, tmp_docs);
+
+				try {
+					System.out.println("sleeping...");
+					Thread.sleep(3000);// sleep for 1000 ms
+				} catch (InterruptedException ex) {
+					ex.printStackTrace();
+				}
+			}
+
+			JCas documentView = ViewManager.getDocumentView(jcas);
+			JCasManipulator.storeDocuments(documentView, documents);
+		} catch (Exception e) {
+			throw new AnalysisEngineProcessException(e);
+		}
+	}
+
+	public List<RetrievalResult> retrieveDocuments(List<String> keyterms,
+			List<String> keyphrases) {
+
+		List<RetrievalResult> documents = new ArrayList<RetrievalResult>(0);
+		if (keyterms.size() == 0)
+			return documents;
+
+		// construct queries
+		List<Query> queryL = new ArrayList<Query>();
+		Set<String> queryS = new HashSet<String>();
+		StringBuilder b;
+		// - keyword queries
+		b = new StringBuilder();
+		for (String keyterm : keyterms) {
+			if (b.length() > 0)
+				b.append(" ");
+			b.append(keyterm);
+		}
+		String keywordQuery = b.toString();
+		if (queryS.add(keywordQuery)) {
+			queryL.add(new Query(keywordQuery));
+		}
+		// - phrase queries
+		// b = new StringBuilder();
+		// for (String phrase : keyphrases) {
+		// if (phrase.matches(".*?\\s.*+")) {
+		// phrase = "\"" + phrase + "\"";
+		// }
+		// if (b.length() > 0)
+		// b.append(" ");
+		// b.append(phrase);
+		// }
+		// String phraseQuery = b.toString();
+		// if (queryS.add(phraseQuery)) {
+		// queryL.add(new Query(phraseQuery));
+		// }
+
+		// run search
+		Search.clearKnowledgeMiners();
+		for (IndriSentencesKM km : kms) {
+			Search.addKnowledgeMiner(km);
+		}
+
+		List<Result> resultL = new ArrayList<Result>();
+		for (Query query : queryL) {
+			Result[] results = Search.doSearch(new Query[] { query });
+			for (Result result : results) {
+				resultL.add(result);
+			}
+		}
+
+		// remove characters that are not supported by UIMA
+		for (Result result : resultL) {
+			String s = result.getAnswer();
+			StringBuilder sb = new StringBuilder();
+			for (char c : s.toCharArray())
+				if (c > 0x1f) {
+					sb.append(c);
+				} else {
+					sb.append(' ');
+				}
+			// documents.add(sb.toString());
+			documents.add(new RetrievalResult(result.getDocID(), result
+					.getScore(), sb.toString(), result.getHitPos(), result
+					.getQuery().getQueryString()));
+		}
+		LOGGER.info("  Retrieved " + documents.size() + " docs.");
+		return documents;
+	}
+
+	@Override
+	public String getComponentId() {
+		return "Ephyra Retrieval Strategist";
+	}
+}

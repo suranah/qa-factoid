@@ -1,0 +1,171 @@
+package edu.cmu.lti.yandongl.yahooanswers;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Vector;
+
+import edu.cmu.lti.oaqa.framework.data.RetrievalResult;
+
+public class YahooAnswers {
+
+	public List<RetrievalResult> retrieveYahooAnswers(String qid,
+			String _question, List<String> keyterms, int thresh_question) {
+
+		List<RetrievalResult> results = new ArrayList<RetrievalResult>();
+
+		Vector<String> v_u = new Vector<String>();
+		Vector<String> v_q = new Vector<String>();
+		QueryYahooAnswers query = new QueryYahooAnswers(v_u, v_q);
+		String q = _question;
+		String q_keyterms = null;
+
+		int num_result = 5;
+		int each_num = 3;
+		int MAX_ERROR = 3;
+
+		int start = 0;
+		int num_errors = 0;
+
+		int answer_count = 1;
+
+		StringBuffer sb = new StringBuffer();
+		for (int i = 0; i < keyterms.size(); i++) {
+			sb.append(keyterms.get(i));
+			if (i < keyterms.size() - 1) {
+				sb.append(" ");
+			}
+		}
+		q_keyterms = sb.toString();
+
+		// System.out.println("target:"+q.getID()+"/"+q.getTarget());
+		boolean continuable = true;
+
+		while (start < num_result && continuable) {// when less than 100 q
+			Vector<edu.cmu.lti.yandongl.yahooanswers.YAQuestion> rc = null;
+
+			while (rc == null || rc.size() == 0 && num_errors < MAX_ERROR) {
+				try {
+					rc = query.query(q, each_num, "question", start);
+				} catch (edu.cmu.lti.yandongl.yahooanswers.TimeOutException ex) {
+					System.err.println("TimeOut!");
+					ex.printStackTrace();
+					num_errors++;
+				} catch (IOException ex) {
+					ex.printStackTrace();
+				}
+				if (rc.size() == 0) {
+					System.err.println("try " + (++num_errors) + " time...");
+
+					try {
+						System.out.println("sleeping...");
+						Thread.currentThread().sleep(3000);// sleep for 1000 ms
+					} catch (InterruptedException ex) {
+						ex.printStackTrace();
+					}
+
+				}
+			}
+
+			if (rc.size() < each_num) {
+				continuable = false;
+			}
+
+			for (int j = 0; j < rc.size(); j++) {
+				edu.cmu.lti.yandongl.yahooanswers.YAQuestion yq = rc.get(j);
+			    System.out.println("Yahoo  !!" );
+
+				Vector<edu.cmu.lti.yandongl.yahooanswers.YAAnswer> ans = yq
+						.getAllAnswers();
+				/*
+				 * if(ans.size() > 0) { RetrievalResult r = new
+				 * RetrievalResult("doc_id", 100.0, ans .get(0).getContent(), 0,
+				 * question); results.add(r); }
+				 */
+				int count_ans = 0;
+				for (int k = 0; k < ans.size() && count_ans < 1; k++) {
+					RetrievalResult r = new RetrievalResult("doc_id", 1.01, ans
+<<<<<<< .mine
+							.get(k).getContent(), k+1, question);
+					r.setYahoo(true);
+				    System.out.println("Yahoo  " + r.getText() + r.getYahoo());
+=======
+							.get(k).getContent(), answer_count++, q);
+>>>>>>> .r58
+					results.add(r);
+					count_ans++;
+				}
+			}
+			// type:factoid, list
+			start += each_num;// 0,50,100
+		}
+
+		System.out.println("1 results size:" + results.size() + " <-- " + q);
+
+		if (results.size() < thresh_question) {
+			start = 0;
+			continuable = true;
+			num_errors = 0;
+
+			while (start < num_result && continuable) {// when less than 100 q
+				Vector<edu.cmu.lti.yandongl.yahooanswers.YAQuestion> rc = null;
+
+				while (rc == null || rc.size() == 0 && num_errors < MAX_ERROR) {// if
+					// nothing
+					// crawled
+					// and
+					// <max_error
+					try {
+						rc = query.query(q_keyterms, each_num, "question",
+								start);
+					} catch (edu.cmu.lti.yandongl.yahooanswers.TimeOutException ex) {
+						System.err.println("TimeOut!");
+						ex.printStackTrace();
+						num_errors++;
+					} catch (IOException ex) {
+						ex.printStackTrace();
+					}
+					if (rc.size() == 0) {
+						System.err
+								.println("try " + (++num_errors) + " time...");
+
+						try {
+							System.out.println("sleeping...");
+							Thread.currentThread().sleep(3000);// sleep for 1000
+																// ms
+						} catch (InterruptedException ex) {
+							ex.printStackTrace();
+						}
+
+					}
+				}
+
+				if (rc.size() < each_num) {
+					continuable = false;
+				}
+
+				for (int j = 0; j < rc.size(); j++) {
+					edu.cmu.lti.yandongl.yahooanswers.YAQuestion yq = rc.get(j);
+
+					Vector<edu.cmu.lti.yandongl.yahooanswers.YAAnswer> ans = yq
+							.getAllAnswers();
+					int count_ans = 0;
+					for (int k = 0; k < ans.size() && count_ans < 5; k++) {
+						RetrievalResult r = new RetrievalResult("doc_id", 1.01,
+								ans.get(k).getContent(), answer_count++,
+								q_keyterms);
+						results.add(r);
+						count_ans++;
+					}
+				}
+				// type:factoid, list
+				start += each_num;// 0,50,100
+			}
+		}
+
+		System.out.println("2 results size:" + results.size() + " <-- "
+				+ q_keyterms);
+
+		return results;
+	}
+}

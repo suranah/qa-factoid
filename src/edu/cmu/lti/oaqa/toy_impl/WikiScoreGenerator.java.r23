@@ -1,0 +1,114 @@
+package edu.cmu.lti.oaqa.toy_impl;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.net.URLConnection;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import edu.cmu.lti.oaqa.framework.data.AnswerCandidate;
+
+public class WikiScoreGenerator {
+
+  public static AnswerCandidate[] wikiScore(String answerType, List<String> keyterms,
+          AnswerCandidate[] sorted) {
+    AnswerCandidate[] wikiSorted = sorted.clone();
+    String wiki = null;
+    try {
+      wiki = getWiki(keyterms, answerType);
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+
+    if (wiki != null) {
+      Arrays.sort(sorted, Collections.reverseOrder());
+      generateScore(sorted, wiki);
+    }
+    return wikiSorted;
+  }
+
+  private static String getWiki(List<String> keyterms, String answerType) throws Exception {
+    String url;
+    url = "http://google.com/search?q=";
+    int number = keyterms.size();
+    for (int i = 0; i < number; i++) {
+      String sth = keyterms.get(i);
+      if (i == 0)
+        url = url + sth;
+      else
+        url = url + "+" + sth;
+    }
+    url = url + "wiki";
+
+    URL urlDir;
+    urlDir = new URL(url);
+    StringBuffer conBuffer = new StringBuffer();
+    URLConnection conn = urlDir.openConnection();
+    conn.setRequestProperty("User-Agent", "Mozilla/4.0 (compatible; MSIE 5.0; Windows NT; DigExt)");
+    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+    String line = null;
+    while ((line = br.readLine()) != null) {
+      conBuffer.append(line + "\n");
+    }
+    br.close();
+    String contentString = conBuffer.toString();
+    String wikiPattern = "\\?q=(http://en.wikipedia.org/wiki/.*?)&amp";
+    Pattern p = Pattern.compile(wikiPattern, Pattern.DOTALL | Pattern.MULTILINE);
+    Matcher m = p.matcher(contentString);
+    URL wiki;
+    String wikicontent;
+    if (m.find()) {
+      System.out.println(m.group());
+      System.out.println("Wiki Fetched");
+      String wikiurl = m.group(1);
+      wiki = new URL(wikiurl);
+      conn = wiki.openConnection();
+      conn.setRequestProperty("User-Agent",
+              "Mozilla/4.0 (compatible; MSIE 5.0; Windows NT; DigExt)");
+      br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+      line = null;
+      while ((line = br.readLine()) != null) {
+        conBuffer.append(line + "\n");
+      }
+      br.close();
+      wikicontent = conBuffer.toString();
+      wikicontent = ContentFilter.filter(wikicontent);
+      return wikicontent;
+    } else {
+      return null;
+    }
+  }
+
+  private static void generateScore(AnswerCandidate[] sorted, String wiki) {
+    int size = sorted.length;
+    int maxScore = 0;
+    int[] scores = new int[size];
+    for (int i = 0; i < size; i++) {
+      AnswerCandidate ac = sorted[i];
+      int score = 0;
+      String answer = ac.getText();
+      answer = answer.replaceAll("\\*|\\+|\\?|\\(|\\)|\\[|\\]|\\{|\\}|\\.|\\-|\\\\|\\$|\\^", "");
+      answer = answer.replaceAll("\\s\\s+", " ");
+      if (!answer.equalsIgnoreCase("") && !answer.equalsIgnoreCase(" ")) {
+        answer = "[^\\w]" + answer + "[^\\w]";
+        Pattern p = Pattern.compile(answer, Pattern.MULTILINE);
+        Matcher m = p.matcher(wiki);
+        while (m.find())
+          score++;
+      }
+      scores[i] = score;
+      if (maxScore < score)
+        maxScore = score;
+    }
+    if (maxScore != 0) {
+      for (int i = 0; i < size; i++) {
+        AnswerCandidate ac = sorted[i];
+        ac.setScore(scores[i]);
+      }
+    }
+  }
+}
